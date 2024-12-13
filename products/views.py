@@ -1,29 +1,56 @@
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Product
-from .serializers import ProductSerializer, ProductDetailSerializer
+from django.db import models
 
 
-@api_view(['GET'])
-def product_detail_api_view(request, id):
-    try:
-        product = Product.objects.get(id=id)
-    except Product.DoesNotExist:
-        return Response(data={'error': 'Product not found!'},
-                        status=status.HTTP_404_NOT_FOUND)
-    data = ProductDetailSerializer(product).data
-    return Response(data=data)
+class AbstractModel(models.Model):
+    class Meta:
+        abstract = True
+
+    name = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.name
 
 
-@api_view(http_method_names=['GET'])
-def product_list_api_view(request):
-    # step 1: Collect all products from DB (QuerySet)
-    products = (Product.objects.select_related('category')
-                .prefetch_related('tags', 'reviews').all())
+class Category(AbstractModel):
+    parent = models.ForeignKey('self', on_delete=models.CASCADE,
+                               null=True, blank=True)
 
-    # step 2: Reformat (Serialize) data to list of Dictionary
-    serializer = ProductSerializer(instance=products, many=True)
 
-    # step 3: Return response with data and status (default: 200)
-    return Response(data=serializer.data, status=status.HTTP_200_OK)
+class Tag(AbstractModel):
+    pass
+
+
+class Product(models.Model):
+    category = models.ForeignKey(Category, on_delete=models.CASCADE,
+                                 null=True,
+                                 blank=True,
+                                 related_name='product_categories')  # category_id = 1
+    tags = models.ManyToManyField(Tag, blank=True)
+    title = models.CharField(max_length=255)
+    text = models.TextField(null=True, blank=True)
+    price = models.FloatField()
+    is_active = models.BooleanField(default=True)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def tag_names(self):
+        return [tag.name for tag in self.tags.all()]
+
+
+STARS = (
+    (i, '* ' * i) for i in range(1, 6)
+)
+
+
+class Review(models.Model):
+    text = models.TextField()
+    stars = models.IntegerField(choices=STARS, default=5)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE,
+                                related_name='reviews')
+
+    def __str__(self):
+        return self.text
